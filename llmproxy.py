@@ -5,7 +5,6 @@ import requests
 # Read proxy config from environment
 end_point = os.environ.get("endPoint")
 api_key = os.environ.get("apiKey")
-upload_endpoint = os.environ.get("uploadEndpoint")  # Make sure to set this env var
 
 def generate(
     model: str,
@@ -34,29 +33,45 @@ def generate(
         'rag_k': rag_k
     }
 
+    print("Request:", json.dumps(request, indent=2))
+
     try:
         response = requests.post(end_point, headers=headers, json=request)
+        print(f"Response status: {response.status_code}")
+        print(f"Response headers: {response.headers}")
+        
         if response.status_code == 200:
             res = json.loads(response.text)
-            return {'response': res['result'], 'rag_context': res.get('rag_context')}
+            print("RAG Context in response:", res.get('rag_context'))
+            return res
         else:
-            return {'response': f"Error: Received response code {response.status_code}"}
+            print(f"Error response: {response.text}")
+            return {'result': f"Error: Received response code {response.status_code}"}
     except requests.exceptions.RequestException as e:
-        return {'response': f"An error occurred: {e}"}
+        print(f"Request error: {str(e)}")
+        return {'result': f"An error occurred: {e}"}
 
 def upload(multipart_form_data):
     headers = {
         'x-api-key': api_key
     }
 
+    # Get upload endpoint
+    parts = end_point.split('/')
+    upload_endpoint = '/'.join(parts[:-1] + ['upload'])
+    print(f"Using upload endpoint: {upload_endpoint}")
+
     try:
         response = requests.post(upload_endpoint, headers=headers, files=multipart_form_data)
+        print(f"Upload response status: {response.status_code}")
+        print(f"Upload response: {response.text}")
+        
         if response.status_code == 200:
             return "Successfully uploaded. It may take a short while for the document to be added to your context"
         else:
-            return f"Error: Received response code {response.status_code}"
+            return f"Error: Upload failed with status {response.status_code}"
     except requests.exceptions.RequestException as e:
-        return f"An error occurred: {e}"
+        return f"Upload error: {e}"
 
 def pdf_upload(
     path: str,
@@ -64,6 +79,10 @@ def pdf_upload(
     description: str | None = None,
     session_id: str | None = None
 ):
+    print(f"Attempting to upload PDF from: {path}")
+    if not os.path.exists(path):
+        return f"Error: File not found at {path}"
+
     params = {
         'description': description,
         'session_id': session_id,
@@ -77,27 +96,6 @@ def pdf_upload(
                 'file': ('1.pdf', pdf_file, 'application/pdf')
             }
 
-            response = upload(multipart_form_data)
-            return response
+            return upload(multipart_form_data)
     except Exception as e:
-        return f"Error reading PDF file: {str(e)}"
-
-def text_upload(
-    text: str,
-    strategy: str | None = 'smart',
-    description: str | None = None,
-    session_id: str | None = None
-):
-    params = {
-        'description': description,
-        'session_id': session_id,
-        'strategy': strategy
-    }
-
-    multipart_form_data = {
-        'params': (None, json.dumps(params), 'application/json'),
-        'text': (None, text, 'application/text')
-    }
-
-    response = upload(multipart_form_data)
-    return response
+        return f"Error reading PDF: {str(e)}"
