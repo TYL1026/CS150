@@ -5,6 +5,7 @@ import requests
 # Read proxy config from environment
 end_point = os.environ.get("endPoint")
 api_key = os.environ.get("apiKey")
+upload_endpoint = os.environ.get("uploadEndpoint")  # Make sure to set this env var
 
 def generate(
     model: str,
@@ -48,10 +49,6 @@ def upload(multipart_form_data):
         'x-api-key': api_key
     }
 
-    # Get upload endpoint by replacing last part of path
-    parts = end_point.split('/')
-    upload_endpoint = '/'.join(parts[:-1] + ['upload'])
-
     try:
         response = requests.post(upload_endpoint, headers=headers, files=multipart_form_data)
         if response.status_code == 200:
@@ -73,14 +70,17 @@ def pdf_upload(
         'strategy': strategy
     }
 
-    with open(path, 'rb') as pdf_file:
-        multipart_form_data = {
-            'params': (None, json.dumps(params), 'application/json'),
-            'file': ('1.pdf', pdf_file, 'application/pdf')
-        }
+    try:
+        with open(path, 'rb') as pdf_file:
+            multipart_form_data = {
+                'params': (None, json.dumps(params), 'application/json'),
+                'file': ('1.pdf', pdf_file, 'application/pdf')
+            }
 
-        response = upload(multipart_form_data)
-        return response
+            response = upload(multipart_form_data)
+            return response
+    except Exception as e:
+        return f"Error reading PDF file: {str(e)}"
 
 def text_upload(
     text: str,

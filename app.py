@@ -1,8 +1,16 @@
-import requests
 from flask import Flask, request, jsonify
-from llmproxy import generate
+from llmproxy import generate, pdf_upload
 
 app = Flask(__name__)
+
+# First upload the handbook and get the session
+result = pdf_upload(
+    path="1.pdf",
+    strategy="smart",
+    description="Tufts CS Handbook",
+    session_id="tufts-cs-handbook"
+)
+print("PDF Upload Result:", result)
 
 @app.route('/')
 def hello_world():
@@ -24,14 +32,17 @@ def main():
 
     print(f"Message from {user} : {message}")
 
-    # Generate a response using LLMProxy
+    # Generate a response using LLMProxy with RAG enabled
     response = generate(
         model='4o-mini',
-        system='answer my question and add keywords',
-        query= message,
+        system='You are a knowledgeable Tufts CS advisor. Use the provided handbook to answer questions about courses, requirements, and policies accurately.',
+        query=message,
         temperature=0.0,
         lastk=0,
-        session_id='GenericSession'
+        session_id='tufts-cs-handbook',
+        rag_usage=True,
+        rag_threshold=0.6,
+        rag_k=3
     )
 
     response_text = response['response']
