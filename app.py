@@ -1,21 +1,15 @@
 from flask import Flask, request, jsonify
 from llmproxy import generate, pdf_upload
-import os
 
 app = Flask(__name__)
 
-# Get the handbook path
-current_dir = os.path.dirname(os.path.abspath(__file__))
-handbook_path = os.path.join(current_dir, "1.pdf")
-
-# Upload handbook and store session ID
-upload_result = pdf_upload(
-    path=handbook_path,
+# Initialize by uploading the handbook
+handbook_result = pdf_upload(
+    path="1.pdf",
     strategy="smart",
-    description="Tufts CS Handbook",
-    session_id="tufts-cs-handbook-2025"
+    session_id="tufts-handbook"
 )
-print("PDF Upload Result:", upload_result)
+print("Handbook upload result:", handbook_result)
 
 @app.route('/')
 def hello_world():
@@ -37,25 +31,26 @@ def main():
 
     print(f"Message from {user} : {message}")
 
-    # Generate a response using LLMProxy with RAG
+    # Generate a response using LLMProxy with RAG enabled
     response = generate(
         model='4o-mini',
-        system='You are a knowledgeable Tufts CS advisor. Always refer to the provided handbook to answer questions about courses, requirements, and policies. Make sure to quote specific sections when relevant.',
+        system='You are a Tufts CS advisor. Use the handbook to answer questions accurately.',
         query=message,
         temperature=0.0,
         lastk=0,
-        session_id='tufts-cs-handbook-2025',
-        rag_usage=True,
-        rag_threshold=0.6,
-        rag_k=5
+        session_id='tufts-handbook',
+        rag_usage=True,    # Enable RAG
+        rag_threshold=0.5,
+        rag_k=3
     )
 
-    response_text = response.get('response', '')
-    rag_context = response.get('rag_context', '')
-    print("RAG Context:", rag_context)
+    if isinstance(response, dict):
+        response_text = response.get('response', '')
+    else:
+        response_text = response
     
     # Send response back
-    print("Response:", response_text)
+    print(response_text)
 
     return jsonify({"text": response_text})
     
