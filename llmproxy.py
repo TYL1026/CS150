@@ -3,7 +3,7 @@ import json
 import time
 import threading
 import queue
-import re  # Added for course number pattern matching
+import re
 from typing import Dict, List, Optional
 import requests
 
@@ -16,13 +16,12 @@ ROCKETCHAT_URL = "https://chat.genaiconnect.net/api/v1"
 ROCKETCHAT_TOKEN = os.environ.get("RC_token", "346LviduHcAOp0cjBmsvayH7_q48b4TFbsJHekuJ08U")
 ROCKETCHAT_USER_ID = os.environ.get("RC_userId", "QzJoYYTGgNNbZEnty")
 
-# CS Advisor username (the human expert who will receive questions)
-CS_ADVISOR_USERNAME = os.environ.get("CS_ADVISOR", "tony.li672462")
+# CS Advisor username 
+CS_ADVISOR_USERNAME = "tony.li672462"  # Hardcoded to the specific advisor
 
 # LLM Configuration
 DEFAULT_MODEL = "4o-mini"
 DEFAULT_SESSION_ID = "CS_ADVISING_BOT"
-CONFIDENCE_THRESHOLD = 0.85  # Even higher threshold to be extremely conservative
 
 # Track user conversations
 class UserSession:
@@ -65,26 +64,18 @@ class CSAdvisingChatbot:
         self.sessions = {}  # user_id -> UserSession
         self.expert_responses_queue = queue.Queue()
         
-        # Create a system prompt that leverages the uploaded PDF content
+        # A list of known CS courses from the document
+        # This will be populated after document analysis
+        self.known_courses = set()
+        
+        # Create a system prompt with a strong emphasis on avoiding hallucination
         self.system_prompt = """
-        You are a CS department advising chatbot for Tufts University. Your job is to answer questions about CS courses, 
-        degree requirements, prerequisites, and other department-related information.
+        You are a CS department advising chatbot for Tufts University. Your job is to answer questions 
+        about CS courses, degree requirements, prerequisites, and other department-related information.
         
         Base your answers ONLY on the CS department PDF document that has been uploaded to your context.
         
-        IMPORTANT: If you cannot find SPECIFIC information about a course, requirement or topic in the PDF:
-        1. DO NOT make up or hallucinate any information
-        2. Clearly state: "I don't have specific information about [topic] in my current documentation"
-        3. Say: "I'll ask our CS advisor for help with this question"
-        4. Include the tag $EXPERT_NEEDED$ at the end of your response
-        
-        For questions about specific courses (like CS101, CS160, etc.), ONLY provide information if the exact course 
-        number is mentioned in the PDF. DO NOT guess or infer course content if you can't find it.
-        
-        When you're uncertain about any information, even if you think you might know, err on the side of caution and 
-        consult the human expert instead of providing potentially incorrect information.
-        
-        Use a conversational, helpful tone and be concise.
+        NEVER make up or hallucinate information that is not explicitly stated in the document.
         """
         
         # Start threads for handling message processing
@@ -109,9 +100,49 @@ class CSAdvisingChatbot:
         self.message_thread.join(timeout=1.0)
         self.expert_response_thread.join(timeout=1.0)
     
+    def analyze_document_for_courses(self):
+        """Analyze the RAG document to extract mentioned course numbers"""
+        try:
+            # Use a query specifically designed to extract course numbers
+            extraction_prompt = """
+            Please list ALL course numbers (e.g., CS101, CS160, etc.) that are explicitly mentioned 
+            in the document. Format your response as a simple comma-separated list of course numbers 
+            only (e.g., CS101, CS105, CS160). Do not include any other text, explanations, or courses 
+            that aren't explicitly mentioned.
+            """
+            
+            response_data = generate(
+                model=DEFAULT_MODEL,
+                system="You are a tool that extracts CS course numbers mentioned in documents. List ONLY course numbers explicitly mentioned.",
+                query=extraction_prompt,
+                temperature=0.0,  # Zero temperature for deterministic output
+                session_id=f"{DEFAULT_SESSION_ID}_EXTRACTION",
+                rag_usage=True  # Enable RAG to use uploaded PDF
+            )
+            
+            if isinstance(response_data, dict) and 'response' in response_data:
+                course_list = response_data['response']
+                
+                # Extract course numbers using regex
+                course_numbers = re.findall(r'CS\s*\d+', course_list, re.IGNORECASE)
+                
+                # Add to known courses set
+                for course in course_numbers:
+                    # Normalize formatting (remove spaces)
+                    normalized = re.sub(r'\s+', '', course).upper()
+                    self.known_courses.add(normalized)
+                
+                print(f"Extracted {len(self.known_courses)} known courses from document: {', '.join(self.known_courses)}")
+            
+        except Exception as e:
+            print(f"Error extracting course numbers from document: {e}")
+    
     def message_listener(self):
         """Thread that listens for and processes new messages"""
         CHANNEL = "GENERAL"  # Monitor this channel - add more as needed
+        
+        # First, analyze the document to extract course numbers
+        self.analyze_document_for_courses()
         
         while self.running:
             try:
@@ -252,7 +283,17 @@ class CSAdvisingChatbot:
         session = self.sessions[user_id]
         session.add_message(username, content)
         
-        # Process the message with LLM
+        # Check if this is asking about a specific course
+        course_match = re.search(r'CS\s*\d+', content, re.IGNORECASE)
+        if course_match:
+            course_number = re.sub(r'\s+', '', course_match.group(0)).upper()
+            
+            # Check if the course is in our known list
+            if course_number not in self.known_courses:
+                # Course not in our documentation, forward to expert directly
+                return self.forward_to_expert(session, content, channel_or_room_id, course_number)
+        
+        # Process normal questions with LLM
         response, need_expert = self.process_with_llm(content, session)
         
         # Add bot's response to history
@@ -263,20 +304,36 @@ class CSAdvisingChatbot:
         
         # If expert help is needed, forward the question
         if need_expert:
-            question_id = f"q_{int(time.time())}_{user_id[-5:]}"
-            session.add_pending_question(question_id, content)
-            
-            # Format a nice message for the expert
-            expert_msg = (
-                f"Question from user @{username} (ID: {question_id}):\n\n"
-                f"{content}\n\n"
-                f"Please reply with:\n"
-                f"ANSWER: {question_id}\n"
-                f"Your response here..."
-            )
-            
-            # Send to CS advisor
-            self.send_message(f"@{CS_ADVISOR_USERNAME}", expert_msg)
+            self.forward_to_expert(session, content, channel_or_room_id)
+    
+    def forward_to_expert(self, session, question, channel_or_room_id, course_number=None):
+        """Forward a question to the human expert"""
+        question_id = f"q_{int(time.time())}_{session.user_id[-5:]}"
+        session.add_pending_question(question_id, question)
+        
+        # User notification
+        if course_number:
+            response = f"I don't have information about {course_number} in my documentation. I'll ask our CS advisor for help with this question."
+        else:
+            response = "I don't have enough information to answer this question accurately. I'll ask our CS advisor for help with this."
+        
+        # Add bot's response to history
+        session.add_message("bot", response)
+        
+        # Send response to user
+        self.send_message(channel_or_room_id, response)
+        
+        # Format a nice message for the expert
+        expert_msg = (
+            f"Question from user @{session.username} (ID: {question_id}):\n\n"
+            f"{question}\n\n"
+            f"Please reply with:\n"
+            f"ANSWER: {question_id}\n"
+            f"Your response here..."
+        )
+        
+        # Send to CS advisor
+        self.send_message(f"@{CS_ADVISOR_USERNAME}", expert_msg)
     
     def handle_expert_response(self, message):
         """Process a response from the CS advisor"""
@@ -360,47 +417,35 @@ class CSAdvisingChatbot:
                 model=DEFAULT_MODEL,
                 system=self.system_prompt,
                 query=full_query,
-                temperature=0.3,  # Lower temperature to reduce creativity/hallucination
+                temperature=0.2,  # Low temperature to reduce creativity
                 lastk=10,
                 session_id=f"{DEFAULT_SESSION_ID}_{session.user_id}",
-                rag_threshold=CONFIDENCE_THRESHOLD,
-                rag_usage=True,  # Enable RAG to use uploaded PDF
-                rag_k=3
+                rag_usage=True  # Enable RAG to use uploaded PDF
             )
             
             if isinstance(response_data, dict) and 'response' in response_data:
                 response = response_data['response']
                 
-                # Check if expert is needed based on tag or RAG confidence
-                need_expert = False
-                
-                # Check for explicit expert request tag
-                if "$EXPERT_NEEDED$" in response:
-                    need_expert = True
-                    # Remove the tag from the response
-                    response = response.replace("$EXPERT_NEEDED$", "")
-                
-                # Check for any course number mentions that might need verification
-                if re.search(r'CS\s?\d{3}', query, re.IGNORECASE) and "I don't have specific information" not in response:
-                    # Courses were mentioned in the query but we didn't explicitly say we lack info
-                    # This indicates we might be hallucinating, so let's double-check
-                    
-                    # Check RAG context confidence if available
-                    rag_context = response_data.get('rag_context', [])
-                    
-                    # If no RAG context or low confidence, force expert consult
-                    if not rag_context or (isinstance(rag_context, list) and (not rag_context or float(rag_context[0].get('score', 0)) < 0.8)):
-                        need_expert = True
-                        response = "I don't have specific information about this course in my current documentation. I'll ask our CS advisor for help with this question."
-                
-                # Always check RAG context confidence
+                # Get RAG context confidence
                 rag_context = response_data.get('rag_context', [])
-                if isinstance(rag_context, list) and (not rag_context or float(rag_context[0].get('score', 0)) < CONFIDENCE_THRESHOLD):
+                confidence_score = float(rag_context[0].get('score', 0)) if rag_context and isinstance(rag_context, list) and len(rag_context) > 0 else 0
+                
+                # Check if we need expert help
+                # If confidence is low or response contains uncertainty indicators
+                need_expert = False
+                uncertainty_phrases = [
+                    "i'm not sure", 
+                    "i don't know", 
+                    "i don't have",
+                    "i can't find",
+                    "not in my documentation",
+                    "i'm unable to",
+                    "unclear"
+                ]
+                
+                # Look for uncertainty in the response
+                if confidence_score < 0.8 or any(phrase in response.lower() for phrase in uncertainty_phrases):
                     need_expert = True
-                    
-                    # If not already indicating an expert referral, add it
-                    if "ask a human CS advisor" not in response.lower() and "ask our CS advisor" not in response.lower():
-                        response = "I don't have enough specific information to answer this question accurately. I'll ask our CS advisor at Tufts to help with this. I'll get back to you with their response soon."
                 
                 return response.strip(), need_expert
             else:
@@ -487,26 +532,6 @@ def pdf_upload(
     multipart_form_data = {
         'params': (None, json.dumps(params), 'application/json'),
         'file': (None, open(path, 'rb'), "application/pdf")
-    }
-
-    response = upload(multipart_form_data)
-    return response
-
-def text_upload(
-    text: str,    
-    strategy: str | None = None,
-    description: str | None = None,
-    session_id: str | None = None
-):
-    params = {
-        'description': description,
-        'session_id': session_id,
-        'strategy': strategy
-    }
-
-    multipart_form_data = {
-        'params': (None, json.dumps(params), 'application/json'),
-        'text': (None, text, "application/text")
     }
 
     response = upload(multipart_form_data)
