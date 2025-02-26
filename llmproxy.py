@@ -22,7 +22,7 @@ CS_ADVISOR_USERNAME = os.environ.get("CS_ADVISOR", "tony.li672462")
 # LLM Configuration
 DEFAULT_MODEL = "4o-mini"
 DEFAULT_SESSION_ID = "CS_ADVISING_BOT"
-CONFIDENCE_THRESHOLD = 0.75  # Increased threshold to be more conservative
+CONFIDENCE_THRESHOLD = 0.85  # Even higher threshold to be extremely conservative
 
 # Track user conversations
 class UserSession:
