@@ -8,8 +8,8 @@ app = Flask(__name__)
 
 # Rocketchat configuration
 ROCKETCHAT_URL = "https://chat.genaiconnect.net/api/v1"
-ROCKETCHAT_TOKEN = os.environ.get("RC_token")
-ROCKETCHAT_USER_ID = os.environ.get("RC_userId")
+ROCKETCHAT_TOKEN = os.environ.get("RC_token", "346LviduHcAOp0cjBmsvayH7_q48b4TFbsJHekuJ08U")
+ROCKETCHAT_USER_ID = os.environ.get("RC_userId", "QzJoYYTGgNNbZEnty")
 CS_ADVISOR = "tony.li672462"
 
 # Initialize by uploading the handbook
@@ -39,10 +39,18 @@ def send_message_to_advisor(user, message):
             "text": advisor_msg
         }
         
+        print(f"Attempting to send message to @{CS_ADVISOR} with payload: {payload}")
         response = requests.post(url, json=payload, headers=headers)
-        return response.status_code == 200
+        
+        if response.status_code == 200:
+            print(f"Successfully forwarded message to advisor. Response: {response.json()}")
+            return True
+        else:
+            print(f"Error forwarding to advisor. Status code: {response.status_code}, Response: {response.text}")
+            return False
+            
     except Exception as e:
-        print(f"Error forwarding to advisor: {e}")
+        print(f"Exception when forwarding to advisor: {e}")
         return False
 
 @app.route('/')
@@ -72,10 +80,13 @@ def main():
         course_number = course_match.group(0)
         
         # Forward the query to the human advisor
-        send_message_to_advisor(user, message)
+        forwarding_success = send_message_to_advisor(user, message)
         
         # Respond to user that their question has been forwarded
-        response_text = f"I don't have specific information about {course_number} in my documentation. I've forwarded your question to our CS advisor who will respond to you directly."
+        if forwarding_success:
+            response_text = f"I don't have specific information about {course_number} in my documentation. I've forwarded your question to our CS advisor who will respond to you directly."
+        else:
+            response_text = f"I don't have specific information about {course_number} in my documentation. I tried to forward your question to our CS advisor but encountered an issue. Please try again later or contact the CS department directly."
         
         print(response_text)
         return jsonify({"text": response_text})
@@ -108,4 +119,4 @@ def page_not_found(e):
     return "Not Found", 404
 
 if __name__ == "__main__":
-    app.run()
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
