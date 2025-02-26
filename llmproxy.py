@@ -3,6 +3,7 @@ import json
 import time
 import threading
 import queue
+import re  # Added for course number pattern matching
 from typing import Dict, List, Optional
 import requests
 
@@ -21,7 +22,7 @@ CS_ADVISOR_USERNAME = os.environ.get("CS_ADVISOR", "tony.li672462")
 # LLM Configuration
 DEFAULT_MODEL = "4o-mini"
 DEFAULT_SESSION_ID = "CS_ADVISING_BOT"
-CONFIDENCE_THRESHOLD = 0.7  # Threshold below which to involve human expert
+CONFIDENCE_THRESHOLD = 0.75  # Increased threshold to be more conservative
 
 # Track user conversations
 class UserSession:
@@ -66,15 +67,22 @@ class CSAdvisingChatbot:
         
         # Create a system prompt that leverages the uploaded PDF content
         self.system_prompt = """
-        You are a CS department advising chatbot. Your job is to answer questions about CS courses, 
+        You are a CS department advising chatbot for Tufts University. Your job is to answer questions about CS courses, 
         degree requirements, prerequisites, and other department-related information.
         
-        Base your answers on the CS department PDF document that has been uploaded to your context.
+        Base your answers ONLY on the CS department PDF document that has been uploaded to your context.
         
-        If you're not confident in your answer or can't find the information in the PDF:
-        1. Admit that you don't have enough information
-        2. Tell the user you'll ask a human CS advisor for help
-        3. Return the tag $$EXPERT_NEEDED$$ at the end of your response
+        IMPORTANT: If you cannot find SPECIFIC information about a course, requirement or topic in the PDF:
+        1. DO NOT make up or hallucinate any information
+        2. Clearly state: "I don't have specific information about [topic] in my current documentation"
+        3. Say: "I'll ask our CS advisor for help with this question"
+        4. Include the tag $EXPERT_NEEDED$ at the end of your response
+        
+        For questions about specific courses (like CS101, CS160, etc.), ONLY provide information if the exact course 
+        number is mentioned in the PDF. DO NOT guess or infer course content if you can't find it.
+        
+        When you're uncertain about any information, even if you think you might know, err on the side of caution and 
+        consult the human expert instead of providing potentially incorrect information.
         
         Use a conversational, helpful tone and be concise.
         """
@@ -352,7 +360,7 @@ class CSAdvisingChatbot:
                 model=DEFAULT_MODEL,
                 system=self.system_prompt,
                 query=full_query,
-                temperature=0.7,
+                temperature=0.3,  # Lower temperature to reduce creativity/hallucination
                 lastk=10,
                 session_id=f"{DEFAULT_SESSION_ID}_{session.user_id}",
                 rag_threshold=CONFIDENCE_THRESHOLD,
@@ -367,22 +375,32 @@ class CSAdvisingChatbot:
                 need_expert = False
                 
                 # Check for explicit expert request tag
-                if "$$EXPERT_NEEDED$$" in response:
+                if "$EXPERT_NEEDED$" in response:
                     need_expert = True
                     # Remove the tag from the response
-                    response = response.replace("$$EXPERT_NEEDED$$", "")
+                    response = response.replace("$EXPERT_NEEDED$", "")
                 
-                # Check RAG context confidence if available
-                rag_context = response_data.get('rag_context', [])
-                if isinstance(rag_context, list) and len(rag_context) > 0:
-                    # Check if the highest confidence is below threshold
-                    top_score = float(rag_context[0].get('score', 1.0)) if rag_context else 0
-                    if top_score < CONFIDENCE_THRESHOLD:
+                # Check for any course number mentions that might need verification
+                if re.search(r'CS\s?\d{3}', query, re.IGNORECASE) and "I don't have specific information" not in response:
+                    # Courses were mentioned in the query but we didn't explicitly say we lack info
+                    # This indicates we might be hallucinating, so let's double-check
+                    
+                    # Check RAG context confidence if available
+                    rag_context = response_data.get('rag_context', [])
+                    
+                    # If no RAG context or low confidence, force expert consult
+                    if not rag_context or (isinstance(rag_context, list) and (not rag_context or float(rag_context[0].get('score', 0)) < 0.8)):
                         need_expert = True
-                        
-                        # If not already indicating an expert referral, add it
-                        if "ask a human CS advisor" not in response.lower():
-                            response += "\n\nI'm not fully confident in my answer, so I'll ask a CS advisor to help with this question. I'll get back to you with their response soon."
+                        response = "I don't have specific information about this course in my current documentation. I'll ask our CS advisor for help with this question."
+                
+                # Always check RAG context confidence
+                rag_context = response_data.get('rag_context', [])
+                if isinstance(rag_context, list) and (not rag_context or float(rag_context[0].get('score', 0)) < CONFIDENCE_THRESHOLD):
+                    need_expert = True
+                    
+                    # If not already indicating an expert referral, add it
+                    if "ask a human CS advisor" not in response.lower() and "ask our CS advisor" not in response.lower():
+                        response = "I don't have enough specific information to answer this question accurately. I'll ask our CS advisor at Tufts to help with this. I'll get back to you with their response soon."
                 
                 return response.strip(), need_expert
             else:
