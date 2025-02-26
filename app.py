@@ -10,10 +10,7 @@ app = Flask(__name__)
 ROCKETCHAT_URL = "https://chat.genaiconnect.net/api/v1"
 ROCKETCHAT_TOKEN = os.environ.get("RC_token", "346LviduHcAOp0cjBmsvayH7_q48b4TFbsJHekuJ08U")
 ROCKETCHAT_USER_ID = os.environ.get("RC_userId", "QzJoYYTGgNNbZEnty")
-
-# Known courses cache
-known_courses = set()
-has_extracted_courses = False
+CONFIDENCE_THRESHOLD = 0.6  # Threshold for confidence in answers
 
 # Initialize by uploading the handbook
 handbook_result = pdf_upload(
@@ -22,47 +19,6 @@ handbook_result = pdf_upload(
     session_id="tufts-handbook"
 )
 print("Handbook upload result:", handbook_result)
-
-def extract_known_courses():
-    """Extract course numbers mentioned in the document"""
-    global known_courses, has_extracted_courses
-    
-    if has_extracted_courses:
-        return known_courses
-    
-    try:
-        # Query to extract course numbers from the document
-        response = generate(
-            model='4o-mini',
-            system='You are a tool that extracts CS course numbers mentioned in documents. List ONLY course numbers explicitly mentioned.',
-            query='Please list ALL course numbers (e.g., CS111, CS112, etc.) that are explicitly mentioned in the document. Format your response as a simple comma-separated list of course numbers only. Do not include any other text or explanations.',
-            temperature=0.0,
-            session_id='tufts-handbook-extraction',
-            rag_usage=True
-        )
-        
-        # Parse the response to extract course numbers
-        if isinstance(response, dict):
-            course_list = response.get('response', '')
-        else:
-            course_list = response
-            
-        # Extract course numbers using regex
-        course_numbers = re.findall(r'CS\s*\d+', course_list, re.IGNORECASE)
-        
-        # Add to known courses set
-        for course in course_numbers:
-            # Normalize formatting (remove spaces)
-            normalized = re.sub(r'\s+', '', course).upper()
-            known_courses.add(normalized)
-            
-        print(f"Extracted {len(known_courses)} known courses: {', '.join(known_courses)}")
-        has_extracted_courses = True
-        
-    except Exception as e:
-        print(f"Error extracting courses: {e}")
-        
-    return known_courses
 
 def send_message_to_advisor(user, message, advisor):
     """Forward a message to the specified CS advisor"""
@@ -76,7 +32,7 @@ def send_message_to_advisor(user, message, advisor):
         }
         
         # Format message for advisor
-        advisor_msg = f"Question from @{user}:\n\n{message}\n\nPlease respond directly to the student."
+        advisor_msg = f"Question from @{user}:\n\nwhat is cs112?\n\nPlease respond directly to the student."
         
         payload = {
             "channel": f"@{advisor}",
@@ -96,6 +52,45 @@ def send_message_to_advisor(user, message, advisor):
     except Exception as e:
         print(f"Exception when forwarding to advisor: {e}")
         return False
+
+def check_document_confidence(query):
+    """Check if we have relevant information about this query in our document"""
+    try:
+        # Use a test query to check if we have information
+        test_response = generate(
+            model='4o-mini',
+            system="""You are a document relevance checker. Your job is ONLY to determine if the 
+                   provided document contains specific information about the query. 
+                   Respond with EXACTLY "YES" if the document contains relevant information
+                   about the query, and "NO" if it does not. DO NOT include any other text.""",
+            query=f"Does the document contain specific information about {query}?",
+            temperature=0.0,
+            session_id='tufts-handbook-check',
+            rag_usage=True,
+            rag_threshold=0.4,
+            rag_k=3
+        )
+        
+        if isinstance(test_response, dict):
+            result = test_response.get('response', '')
+            rag_context = test_response.get('rag_context', [])
+            
+            # Get confidence score if available
+            confidence = 0
+            if rag_context and isinstance(rag_context, list) and len(rag_context) > 0:
+                confidence = float(rag_context[0].get('score', 0))
+                
+            print(f"Document check result: {result}, confidence: {confidence}")
+            
+            # Check the result
+            has_info = "YES" in result.upper() and confidence >= CONFIDENCE_THRESHOLD
+            return has_info, confidence
+            
+        return False, 0
+        
+    except Exception as e:
+        print(f"Error checking document confidence: {e}")
+        return False, 0
 
 @app.route('/')
 def hello_world():
@@ -120,53 +115,63 @@ def main():
     # For testing purposes, make the current user the advisor
     current_advisor = user
     
-    # Extract known courses if we haven't already
-    known_courses = extract_known_courses()
-    
-    # Check if the message is asking about a specific course
+    # Check if this is a course-related question
     course_match = re.search(r'CS\s*\d+', message, re.IGNORECASE)
     if course_match:
-        # Extract the course number
         course_number = course_match.group(0)
-        normalized_course = re.sub(r'\s+', '', course_number).upper()
         
-        # Check if this course is in our known courses list
-        # If it's not in the list, forward to the advisor
-        if normalized_course not in known_courses:
-            # Forward the query to the human advisor
+        # Check if we have information about this course in our document
+        has_info, confidence = check_document_confidence(course_number)
+        
+        if not has_info:
+            # We don't have good information about this course, forward to advisor
             forwarding_success = send_message_to_advisor(user, message, current_advisor)
             
-            # Respond to user that their question has been forwarded
             if forwarding_success:
-                response_text = f"I don't have specific information about {course_number} in my documentation. I've forwarded your question to our CS advisor (which is you for testing purposes) who will respond to you directly."
+                response_text = f"I don't have specific information about {course_number} in my documentation (confidence: {confidence:.2f}). I've forwarded your question to our CS advisor (which is you for testing purposes) who will respond to you directly."
             else:
-                response_text = f"I don't have specific information about {course_number} in my documentation. I tried to forward your question to our CS advisor but encountered an issue. Please try again later."
+                response_text = f"I don't have specific information about {course_number} in my documentation. I tried to forward your question to our CS advisor but encountered an issue."
             
             print(response_text)
             return jsonify({"text": response_text})
     
-    # For courses that are in our known list, or non-course queries, 
-    # generate a response using LLMProxy with RAG enabled
+    # We either have information about the course or this is a non-course query
+    # Generate a response using LLMProxy with RAG
     response = generate(
         model='4o-mini',
-        system='You are a Tufts CS advisor. Use the handbook to answer questions accurately. Never make up information that is not in the handbook.',
+        system='You are a Tufts CS advisor. Use the handbook to answer questions accurately. Never make up information that is not in the handbook. If you are unsure, say so explicitly.',
         query=message,
-        temperature=0.0,
+        temperature=0.2,
         lastk=0,
         session_id='tufts-handbook',
-        rag_usage=True,    # Enable RAG
-        rag_threshold=0.5,
+        rag_usage=True,
+        rag_threshold=CONFIDENCE_THRESHOLD,
         rag_k=3
     )
-
+    
+    # Get the response and check for uncertainty indicators
     if isinstance(response, dict):
         response_text = response.get('response', '')
+        rag_context = response.get('rag_context', [])
+        
+        # Check confidence
+        if rag_context and isinstance(rag_context, list) and len(rag_context) > 0:
+            confidence = float(rag_context[0].get('score', 0))
+            print(f"Response confidence: {confidence}")
+            
+            # Check if the confidence is too low or if the response indicates uncertainty
+            uncertainty_phrases = ["i'm not sure", "i don't know", "not in the document", "not enough information"]
+            if confidence < CONFIDENCE_THRESHOLD or any(phrase in response_text.lower() for phrase in uncertainty_phrases):
+                # Forward to advisor as a fallback
+                forwarding_success = send_message_to_advisor(user, message, current_advisor)
+                
+                if forwarding_success:
+                    response_text += f"\n\nI'm not fully confident in my answer (confidence: {confidence:.2f}), so I've also forwarded your question to our CS advisor who will respond directly."
     else:
         response_text = response
     
     # Send response back
     print(response_text)
-
     return jsonify({"text": response_text})
     
 @app.errorhandler(404)
