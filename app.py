@@ -120,5 +120,74 @@ def search_questions():
             "message": str(e)
         }), 500
 
+@app.route('/query', methods=['POST'])
+def query():
+    try:
+        data = request.get_json()
+        
+        # Extract relevant information
+        channel_id = data.get("dC9Suu7AujjGywutjiQPJmyQ7xNwGxWFT3", "unknown_channel")  
+        user_name = data.get("user_name", "Unknown")
+        message = data.get("text", "")
+        
+        print(f"Received request: {data}")
+        
+        # Ignore bot messages
+        if data.get("bot") or not message:
+            return jsonify({"status": "ignored"})
+            
+        print(f"Message in channel {channel_id} sent by {user_name} : {message}")
+        
+        # Log the query to MongoDB
+        try:
+            client = get_mongodb_connection()
+            if client:
+                db = client.get_database("freq_questions")
+                queries_collection = db.get_collection("queries")
+                
+                query_record = {
+                    "channel_id": channel_id,
+                    "user_name": user_name,
+                    "message": message,
+                    "timestamp": datetime.now()
+                }
+                queries_collection.insert_one(query_record)
+                
+                # Try to find relevant info in questions collection
+                questions_collection = db.get_collection("questions")
+                
+                # Simple keyword search
+                keywords = message.lower().split()
+                relevant_docs = []
+                
+                for keyword in keywords:
+                    if len(keyword) > 3:  # Skip short words
+                        query = {
+                            '$or': [
+                                {'question': {'$regex': keyword, '$options': 'i'}},
+                                {'answer': {'$regex': keyword, '$options': 'i'}}
+                            ]
+                        }
+                        matches = list(questions_collection.find(query, {'_id': 0}))
+                        relevant_docs.extend(matches)
+                
+                if relevant_docs:
+                    # Return the first matching answer
+                    response = f"I found this in our database: {relevant_docs[0].get('answer', 'No answer found')}"
+                else:
+                    response = "I don't have specific information about that in my database."
+                
+                client.close()
+                return jsonify({"text": response})
+            else:
+                return jsonify({"text": "Could not connect to the database to process your query."})
+        except Exception as e:
+            print(f"Error processing request: {str(e)}")
+            return jsonify({"text": f"Error: {str(e)}"}), 500
+    
+    except Exception as e:
+        print(f"Error processing request: {str(e)}")
+        return jsonify({"text": f"Error: {str(e)}"}), 500
+
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=int(os.environ.get("PORT", 8000)))
