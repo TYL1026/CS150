@@ -5,31 +5,23 @@ import uuid
 from datetime import datetime
 from pymongo import MongoClient
 import os
-import ssl
 
 app = Flask(__name__)
 # Use a dictionary to store user-specific advisor instances and their state
 user_advisors = {}
 
-# MongoDB connection setup with TLS/SSL fix
+# Simplified MongoDB connection setup
 def get_mongodb_connection():
     try:
-        # Connection string with TLS configuration
+        # Basic connection string without complicated options
         mongodb_uri = "mongodb+srv://li102677:BMILcEhbebhm5s1C@cluster0.aprrt.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
         
-        # Create a MongoDB client with specific TLS/SSL settings
-        client = MongoClient(
-            mongodb_uri,
-            ssl=True,
-            ssl_cert_reqs=ssl.CERT_NONE,  # Less secure but helps bypass certain TLS issues
-            connectTimeoutMS=30000,
-            socketTimeoutMS=30000,
-            serverSelectionTimeoutMS=30000
-        )
+        # Create a MongoDB client with minimal settings
+        client = MongoClient(mongodb_uri, serverSelectionTimeoutMS=5000)
         
         # Test the connection with a simple command
-        db_info = client.server_info()
-        print(f"Connected to MongoDB: {db_info.get('version', 'unknown version')}")
+        client.admin.command('ping')
+        print("MongoDB connection successful")
         return client
     except Exception as e:
         print(f"MongoDB connection error: {e}")
@@ -45,13 +37,14 @@ def hello_world():
             # Access the freq_questions database
             db = client.get_database("freq_questions")
             
-            # Get collection names to verify connection
+            # Try to get collection names
             try:
                 collection_names = db.list_collection_names()
             except Exception as e:
-                collection_names = ["Error listing collections: " + str(e)]
+                collection_names = ["Error listing collections"]
+                print(f"Error listing collections: {e}")
             
-            # Record the connection in a collection
+            # Try to record the connection
             try:
                 connections = db.get_collection("connections")
                 connection_record = {
@@ -60,6 +53,7 @@ def hello_world():
                 }
                 connections.insert_one(connection_record)
                 client.close()
+                print("Inserted connection record")
             except Exception as e:
                 print(f"Error inserting record: {e}")
             
@@ -76,6 +70,7 @@ def hello_world():
             })
             
     except Exception as e:
+        print(f"Error in root endpoint: {e}")
         return jsonify({
             "text": "Hello from Koyeb - you reached the main page!",
             "mongodb_status": "error",
@@ -86,15 +81,14 @@ def hello_world():
 def main():
     data = request.get_json() 
 
-    # Extract relevant information
-    channel_id = data.get("channel_id")  # Try to get the correct field first
+    # Extract relevant information - try different fields
+    channel_id = data.get("channel_id")
     if not channel_id:
-        # Fall back to the hard-coded value if channel_id not found
         channel_id = data.get("dC9Suu7AujjGywutjiQPJmyQ7xNwGxWFT3")
     
-    # If still no channel_id, generate a random one
+    # If still no channel_id, use user_id or generate a random one
     if not channel_id:
-        channel_id = str(uuid.uuid4())
+        channel_id = data.get("user_id", str(uuid.uuid4()))
         
     user_name = data.get("user_name", "Unknown")
     message = data.get("text", "")
@@ -122,6 +116,7 @@ def main():
             }
             conversations.insert_one(conversation_record)
             client.close()
+            print("Logged conversation to MongoDB")
     except Exception as e:
         print(f"MongoDB logging error: {str(e)}")
 
@@ -149,7 +144,7 @@ def main():
             lastk=current_lastk
         )
         
-        # Log the response to MongoDB
+        # Try to log the response to MongoDB
         try:
             client = get_mongodb_connection()
             if client:
@@ -166,6 +161,7 @@ def main():
                 }
                 responses.insert_one(response_record)
                 client.close()
+                print("Logged response to MongoDB")
         except Exception as e:
             print(f"MongoDB response logging error: {str(e)}")
         
@@ -180,5 +176,5 @@ def page_not_found(e):
     return "Not Found", 404
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
+    port = int(os.environ.get("PORT", 8000))
     app.run(debug=True, host="0.0.0.0", port=port)
