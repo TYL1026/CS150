@@ -5,6 +5,7 @@ import uuid
 from datetime import datetime
 from pymongo import MongoClient
 import os
+import re
 
 app = Flask(__name__)
 # Use a dictionary to store user-specific advisor instances and their state
