@@ -81,15 +81,22 @@ def main():
                     ]}
                     db_result = questions_collection.find_one(keyword_query)
             
-            client.close()
-            
             # If we found a match in the database, return it
             if db_result and "answer" in db_result:
                 print("Found answer in database")
+                client.close()
                 return jsonify({"text": db_result["answer"]})
+                
+            # Get a few suggested questions from the database to offer as buttons
+            # This could be based on popularity, relevance to the query, or just general FAQs
+            suggested_questions = list(questions_collection.find({}, {"question": 1, "_id": 0}).limit(3))
+            suggested_questions = [q["question"] for q in suggested_questions if "question" in q]
+            
+            client.close()
     
     except Exception as e:
         print(f"Error searching database: {str(e)}")
+        suggested_questions = []
     
     # If we get here, either the database search failed or no match was found
     # Fall back to the original TuftsCSAdvisor logic
@@ -112,12 +119,48 @@ def main():
         print(f"User {channel_id} - lastk value: {current_lastk}")
         
         # Generate response using user's dedicated advisor with their specific lastk
-        response = user_advisors[channel_id]["advisor"].get_response(
+        advisor_response = user_advisors[channel_id]["advisor"].get_response(
             query=message, 
             lastk=current_lastk
         )
         
-        return jsonify({"text": response})
+        # If no suggested questions from database, use default ones
+        if not suggested_questions:
+            suggested_questions = [
+                "What are the requirements for the CS graduate program?", 
+                "How do I apply for research assistantships?", 
+                "What courses should I take in my first semester?"
+            ]
+        
+        # Format the response with suggested question buttons
+        response = {
+            "text": advisor_response,
+            "blocks": [
+                {
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": advisor_response
+                    }
+                },
+                {
+                    "type": "actions",
+                    "elements": [
+                        {
+                            "type": "button",
+                            "text": {
+                                "type": "plain_text",
+                                "text": question[:75] + ("..." if len(question) > 75 else ""),
+                                "emoji": True
+                            },
+                            "value": question
+                        } for question in suggested_questions
+                    ]
+                }
+            ]
+        }
+        
+        return jsonify(response)
 
     except Exception as e:
         print(f"Error processing request: {str(e)}")
