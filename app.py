@@ -63,7 +63,7 @@ def main():
             
             # Search for matching questions - first try exact match
             db_result = questions_collection.find_one({
-                "question": {"$regex": "^" + re.escape(message) + "$", "$options": "i"}
+                "question": {"...."}
             })
             
             # If no exact match, try partial match
