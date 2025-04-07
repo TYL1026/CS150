@@ -1,5 +1,5 @@
 import requests
-from flask import render_template, Flask, request, jsonify,redirect,Response
+from flask import Flask, request, jsonify, render_template, Response
 from advisor import TuftsCSAdvisor
 import os
 from utils.mongo_config import get_collection, get_mongodb_connection
@@ -7,9 +7,8 @@ import json
 from utils.log_config import setup_logging
 import logging
 import traceback
-import json
-from bson import ObjectId
-from utils.mongo_config import get_collection, get_mongodb_connection
+from bson import ObjectId, json_util
+
 app = Flask(__name__)
 
 # log
@@ -328,248 +327,375 @@ def page_not_found(e):
 def hello_world():
    return jsonify({"text": 'Hello from Koyeb - you reached the main page!'})
 
-
 @app.route('/database', methods=['GET'])
 def database_view():
     """
-    Display the available database collections and provide an interface for browsing data.
+    Displays database contents with CRUD capabilities
     """
     try:
         # Get MongoDB client
         mongo_client = get_mongodb_connection()
         if not mongo_client:
-            return jsonify({"error": "Error connecting to database"}), 500
+            return jsonify({"error": "Error connecting to database. Please check if MONGO_URI is set properly in your .env file."}), 500
         
-        # Get all database names
-        database_names = mongo_client.list_database_names()
-        
-        # Generate HTML for database view
+        # Build HTML page with database content
         html_content = """
         <!DOCTYPE html>
         <html>
         <head>
-            <title>Database Management</title>
+            <title>MongoDB Database Manager</title>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
             <style>
-                body { font-family: Arial, sans-serif; margin: 20px; }
-                h1, h2, h3 { color: #333; }
-                .container { max-width: 1200px; margin: 0 auto; }
-                .collection { margin-bottom: 20px; padding: 10px; border: 1px solid #ddd; border-radius: 5px; }
-                .database { margin-bottom: 30px; }
-                table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-                th, td { padding: 8px; text-align: left; border-bottom: 1px solid #ddd; }
-                th { background-color: #f2f2f2; }
-                button { padding: 5px 10px; margin: 5px; cursor: pointer; }
-                .form-container { margin-top: 20px; padding: 15px; background-color: #f9f9f9; border-radius: 5px; }
-                input, textarea { width: 100%; padding: 8px; margin: 5px 0 10px 0; box-sizing: border-box; }
-                .hidden { display: none; }
-                .actions { display: flex; gap: 5px; }
+                body {
+                    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                    line-height: 1.6;
+                    color: #333;
+                    max-width: 1200px;
+                    margin: 0 auto;
+                    padding: 20px;
+                }
+                h1, h2, h3 {
+                    color: #2c3e50;
+                }
+                .database-section {
+                    margin-bottom: 30px;
+                    border: 1px solid #ddd;
+                    border-radius: 5px;
+                    padding: 15px;
+                    background-color: #f9f9f9;
+                }
+                .collection-section {
+                    margin: 15px 0;
+                    border: 1px solid #e0e0e0;
+                    border-radius: 5px;
+                    padding: 10px;
+                    background-color: white;
+                }
+                table {
+                    width: 100%;
+                    border-collapse: collapse;
+                    margin-top: 10px;
+                    font-size: 14px;
+                }
+                th, td {
+                    padding: 8px 12px;
+                    text-align: left;
+                    border-bottom: 1px solid #e0e0e0;
+                }
+                th {
+                    background-color: #f2f2f2;
+                    font-weight: 600;
+                }
+                pre {
+                    background-color: #f6f8fa;
+                    border-radius: 3px;
+                    padding: 10px;
+                    overflow-x: auto;
+                    max-height: 300px;
+                    margin: 5px 0;
+                }
+                button {
+                    background-color: #4CAF50;
+                    color: white;
+                    border: none;
+                    padding: 8px 12px;
+                    text-align: center;
+                    text-decoration: none;
+                    display: inline-block;
+                    font-size: 14px;
+                    margin: 5px 2px;
+                    cursor: pointer;
+                    border-radius: 4px;
+                }
+                button.edit {
+                    background-color: #2196F3;
+                }
+                button.delete {
+                    background-color: #f44336;
+                }
+                .hidden {
+                    display: none;
+                }
+                form {
+                    margin-top: 15px;
+                    padding: 15px;
+                    background-color: #f2f2f2;
+                    border-radius: 5px;
+                }
+                textarea, input {
+                    width: 100%;
+                    padding: 8px;
+                    margin: 8px 0;
+                    box-sizing: border-box;
+                    border: 1px solid #ccc;
+                    border-radius: 4px;
+                }
+                .actions {
+                    display: flex;
+                    gap: 5px;
+                }
+                .load-spinner {
+                    border: 4px solid #f3f3f3;
+                    border-top: 4px solid #3498db;
+                    border-radius: 50%;
+                    width: 20px;
+                    height: 20px;
+                    animation: spin 2s linear infinite;
+                    display: inline-block;
+                    margin-left: 10px;
+                }
+                @keyframes spin {
+                    0% { transform: rotate(0deg); }
+                    100% { transform: rotate(360deg); }
+                }
             </style>
-            <script>
-                function toggleForm(formId) {
-                    const form = document.getElementById(formId);
-                    form.classList.toggle('hidden');
-                }
-                
-                async function viewCollection(dbName, collName) {
-                    try {
-                        const response = await fetch(`/database/${dbName}/${collName}`);
-                        const data = await response.json();
-                        const tableContainer = document.getElementById(`${dbName}-${collName}-data`);
-                        
-                        let tableHtml = '<table><tr><th>ID</th><th>Data</th><th>Actions</th></tr>';
-                        data.forEach(doc => {
-                            const docId = doc._id;
-                            delete doc._id;  // Remove ID from the data display
-                            tableHtml += `<tr>
-                                <td>${docId}</td>
-                                <td><pre>${JSON.stringify(doc, null, 2)}</pre></td>
-                                <td class="actions">
-                                    <button onclick="editDocument('${dbName}', '${collName}', '${docId}', '${JSON.stringify(doc).replace(/'/g, "\\'")}')">Edit</button>
-                                    <button onclick="deleteDocument('${dbName}', '${collName}', '${docId}')">Delete</button>
-                                </td>
-                            </tr>`;
-                        });
-                        tableHtml += '</table>';
-                        tableContainer.innerHTML = tableHtml;
-                    } catch (error) {
-                        console.error('Error fetching collection data:', error);
-                        alert('Error fetching collection data');
-                    }
-                }
-                
-                function editDocument(dbName, collName, docId, docData) {
-                    const formContainer = document.getElementById(`edit-form-${dbName}-${collName}`);
-                    const formHtml = `
-                        <h3>Edit Document</h3>
-                        <form id="edit-doc-form" onsubmit="updateDocument(event, '${dbName}', '${collName}', '${docId}')">
-                            <textarea name="document" rows="10" required>${docData}</textarea>
-                            <button type="submit">Update</button>
-                            <button type="button" onclick="toggleForm('edit-form-${dbName}-${collName}')">Cancel</button>
-                        </form>
-                    `;
-                    formContainer.innerHTML = formHtml;
-                    formContainer.classList.remove('hidden');
-                }
-                
-                async function updateDocument(event, dbName, collName, docId) {
-                    event.preventDefault();
-                    try {
-                        const form = event.target;
-                        const docData = form.document.value;
-                        
-                        const response = await fetch(`/database/${dbName}/${collName}/${docId}`, {
-                            method: 'PUT',
-                            headers: {
-                                'Content-Type': 'application/json',
-                            },
-                            body: docData
-                        });
-                        
-                        if (response.ok) {
-                            alert('Document updated successfully');
-                            viewCollection(dbName, collName);
-                            toggleForm(`edit-form-${dbName}-${collName}`);
-                        } else {
-                            const error = await response.json();
-                            alert(`Error updating document: ${error.message}`);
-                        }
-                    } catch (error) {
-                        console.error('Error updating document:', error);
-                        alert('Error updating document');
-                    }
-                }
-                
-                async function deleteDocument(dbName, collName, docId) {
-                    if (confirm('Are you sure you want to delete this document?')) {
-                        try {
-                            const response = await fetch(`/database/${dbName}/${collName}/${docId}`, {
-                                method: 'DELETE'
-                            });
-                            
-                            if (response.ok) {
-                                alert('Document deleted successfully');
-                                viewCollection(dbName, collName);
-                            } else {
-                                const error = await response.json();
-                                alert(`Error deleting document: ${error.message}`);
-                            }
-                        } catch (error) {
-                            console.error('Error deleting document:', error);
-                            alert('Error deleting document');
-                        }
-                    }
-                }
-                
-                async function addDocument(event, dbName, collName) {
-                    event.preventDefault();
-                    try {
-                        const form = event.target;
-                        const docData = form.document.value;
-                        
-                        const response = await fetch(`/database/${dbName}/${collName}`, {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json',
-                            },
-                            body: docData
-                        });
-                        
-                        if (response.ok) {
-                            alert('Document added successfully');
-                            form.reset();
-                            viewCollection(dbName, collName);
-                            toggleForm(`add-form-${dbName}-${collName}`);
-                        } else {
-                            const error = await response.json();
-                            alert(`Error adding document: ${error.message}`);
-                        }
-                    } catch (error) {
-                        console.error('Error adding document:', error);
-                        alert('Error adding document');
-                    }
-                }
-            </script>
         </head>
         <body>
-            <div class="container">
-                <h1>Database Management</h1>
+            <h1>MongoDB Database Manager</h1>
+            <div id="database-container">
         """
         
-        # Loop through databases and collections
+        # List all databases except admin, local and config
+        database_names = [db for db in mongo_client.list_database_names() 
+                        if db not in ['admin', 'local', 'config']]
+        
         for db_name in database_names:
-            # Skip system databases
-            if db_name in ['admin', 'local', 'config']:
-                continue
-                
             html_content += f"""
-                <div class="database">
-                    <h2>Database: {db_name}</h2>
+            <div class="database-section">
+                <h2>Database: {db_name}</h2>
             """
             
-            # Get database
-            db = mongo_client[db_name]
-            
-            # Get all collections in the database
-            collection_names = db.list_collection_names()
+            collection_names = mongo_client[db_name].list_collection_names()
             
             for coll_name in collection_names:
                 html_content += f"""
-                    <div class="collection">
-                        <h3>Collection: {coll_name}</h3>
-                        <button onclick="viewCollection('{db_name}', '{coll_name}')">View Data</button>
-                        <button onclick="toggleForm('add-form-{db_name}-{coll_name}')">Add New Document</button>
-                        
-                        <div id="{db_name}-{coll_name}-data"></div>
-                        
-                        <div id="edit-form-{db_name}-{coll_name}" class="form-container hidden"></div>
-                        
-                        <div id="add-form-{db_name}-{coll_name}" class="form-container hidden">
-                            <h3>Add New Document</h3>
-                            <form onsubmit="addDocument(event, '{db_name}', '{coll_name}')">
-                                <label for="document">Document (JSON format):</label>
-                                <textarea name="document" rows="10" required>{{
-  "sample_field": "sample_value"
+                <div class="collection-section">
+                    <h3>Collection: {coll_name}</h3>
+                    <button onclick="loadCollection('{db_name}', '{coll_name}')">View Documents</button>
+                    <button onclick="showAddForm('{db_name}', '{coll_name}')">Add New Document</button>
+                    
+                    <div id="data-{db_name}-{coll_name}" class="data-container"></div>
+                    
+                    <div id="add-form-{db_name}-{coll_name}" class="form-container hidden">
+                        <h4>Add New Document</h4>
+                        <form id="add-doc-form-{db_name}-{coll_name}" onsubmit="return addDocument('{db_name}', '{coll_name}')">
+                            <textarea id="add-content-{db_name}-{coll_name}" rows="10" placeholder="Enter JSON document">{{
+  "field": "value"
 }}</textarea>
-                                <button type="submit">Add Document</button>
-                                <button type="button" onclick="toggleForm('add-form-{db_name}-{coll_name}')">Cancel</button>
-                            </form>
-                        </div>
+                            <button type="submit">Add Document</button>
+                            <button type="button" onclick="hideAddForm('{db_name}', '{coll_name}')">Cancel</button>
+                        </form>
                     </div>
+                    
+                    <div id="edit-form-{db_name}-{coll_name}" class="form-container hidden">
+                        <h4>Edit Document</h4>
+                        <form id="edit-doc-form-{db_name}-{coll_name}" onsubmit="return updateDocument('{db_name}', '{coll_name}')">
+                            <input type="hidden" id="edit-id-{db_name}-{coll_name}">
+                            <textarea id="edit-content-{db_name}-{coll_name}" rows="10"></textarea>
+                            <button type="submit">Update Document</button>
+                            <button type="button" onclick="hideEditForm('{db_name}', '{coll_name}')">Cancel</button>
+                        </form>
+                    </div>
+                </div>
                 """
             
             html_content += "</div>"
-        
+            
         html_content += """
-                </div>
-            </body>
-            </html>
+            </div>
+            
+            <script>
+                // Function to load collection data
+                function loadCollection(dbName, collName) {
+                    const container = document.getElementById(`data-${dbName}-${collName}`);
+                    container.innerHTML = '<div class="load-spinner"></div> Loading documents...';
+                    
+                    fetch(`/database/${dbName}/${collName}`)
+                        .then(response => response.json())
+                        .then(data => {
+                            if (data.length === 0) {
+                                container.innerHTML = '<p>No documents found in this collection.</p>';
+                                return;
+                            }
+                            
+                            let tableHtml = `<table>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Document</th>
+                                    <th>Actions</th>
+                                </tr>`;
+                                
+                            data.forEach(doc => {
+                                const id = doc._id;
+                                delete doc._id;
+                                
+                                tableHtml += `<tr>
+                                    <td>${id}</td>
+                                    <td><pre>${JSON.stringify(doc, null, 2)}</pre></td>
+                                    <td class="actions">
+                                        <button class="edit" onclick="editDocument('${dbName}', '${collName}', '${id}', ${JSON.stringify(JSON.stringify(doc))})">Edit</button>
+                                        <button class="delete" onclick="deleteDocument('${dbName}', '${collName}', '${id}')">Delete</button>
+                                    </td>
+                                </tr>`;
+                            });
+                            
+                            tableHtml += '</table>';
+                            container.innerHTML = tableHtml;
+                        })
+                        .catch(error => {
+                            container.innerHTML = `<p>Error loading documents: ${error.message}</p>`;
+                        });
+                }
+                
+                // Show/hide form functions
+                function showAddForm(dbName, collName) {
+                    document.getElementById(`add-form-${dbName}-${collName}`).classList.remove('hidden');
+                }
+                
+                function hideAddForm(dbName, collName) {
+                    document.getElementById(`add-form-${dbName}-${collName}`).classList.add('hidden');
+                }
+                
+                function showEditForm(dbName, collName) {
+                    document.getElementById(`edit-form-${dbName}-${collName}`).classList.remove('hidden');
+                }
+                
+                function hideEditForm(dbName, collName) {
+                    document.getElementById(`edit-form-${dbName}-${collName}`).classList.add('hidden');
+                }
+                
+                // CRUD operations
+                function addDocument(dbName, collName) {
+                    const contentField = document.getElementById(`add-content-${dbName}-${collName}`);
+                    let content;
+                    
+                    try {
+                        content = JSON.parse(contentField.value);
+                    } catch (e) {
+                        alert('Invalid JSON. Please check your format.');
+                        return false;
+                    }
+                    
+                    fetch(`/database/${dbName}/${collName}`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify(content)
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.error) {
+                            alert(`Error: ${data.error}`);
+                        } else {
+                            alert('Document added successfully');
+                            hideAddForm(dbName, collName);
+                            contentField.value = '{\n  "field": "value"\n}';
+                            loadCollection(dbName, collName);
+                        }
+                    })
+                    .catch(error => {
+                        alert(`Error: ${error.message}`);
+                    });
+                    
+                    return false;
+                }
+                
+                function editDocument(dbName, collName, id, contentStr) {
+                    const idField = document.getElementById(`edit-id-${dbName}-${collName}`);
+                    const contentField = document.getElementById(`edit-content-${dbName}-${collName}`);
+                    
+                    idField.value = id;
+                    contentField.value = JSON.stringify(JSON.parse(contentStr), null, 2);
+                    
+                    showEditForm(dbName, collName);
+                }
+                
+                function updateDocument(dbName, collName) {
+                    const idField = document.getElementById(`edit-id-${dbName}-${collName}`);
+                    const contentField = document.getElementById(`edit-content-${dbName}-${collName}`);
+                    let content;
+                    
+                    try {
+                        content = JSON.parse(contentField.value);
+                    } catch (e) {
+                        alert('Invalid JSON. Please check your format.');
+                        return false;
+                    }
+                    
+                    fetch(`/database/${dbName}/${collName}/${idField.value}`, {
+                        method: 'PUT',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify(content)
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.error) {
+                            alert(`Error: ${data.error}`);
+                        } else {
+                            alert('Document updated successfully');
+                            hideEditForm(dbName, collName);
+                            loadCollection(dbName, collName);
+                        }
+                    })
+                    .catch(error => {
+                        alert(`Error: ${error.message}`);
+                    });
+                    
+                    return false;
+                }
+                
+                function deleteDocument(dbName, collName, id) {
+                    if (confirm('Are you sure you want to delete this document?')) {
+                        fetch(`/database/${dbName}/${collName}/${id}`, {
+                            method: 'DELETE'
+                        })
+                        .then(response => response.json())
+                        .then(data => {
+                            if (data.error) {
+                                alert(`Error: ${data.error}`);
+                            } else {
+                                alert('Document deleted successfully');
+                                loadCollection(dbName, collName);
+                            }
+                        })
+                        .catch(error => {
+                            alert(`Error: ${error.message}`);
+                        });
+                    }
+                }
+            </script>
+        </body>
+        </html>
         """
         
         return Response(html_content, mimetype='text/html')
         
     except Exception as e:
         import traceback
-        traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
+        logger.error(f"Error in database view: {str(e)}\n{traceback.format_exc()}")
+        return jsonify({"error": f"Error: {str(e)}"}), 500
 
 @app.route('/database/<db_name>/<collection_name>', methods=['GET', 'POST'])
-def manage_collection(db_name, collection_name):
+def collection_management(db_name, collection_name):
     """
-    GET: Retrieve documents from a specific collection
-    POST: Add a new document to the collection
+    GET: Fetch documents from a collection
+    POST: Add a new document to a collection
     """
     try:
-        # Get MongoDB client and collection
         mongo_client = get_mongodb_connection()
         if not mongo_client:
-            return jsonify({"error": "Error connecting to database"}), 500
+            return jsonify({"error": "Database connection error"}), 500
             
         collection = mongo_client[db_name][collection_name]
         
         if request.method == 'GET':
-            # Fetch documents from the collection (limit to 100 for performance)
+            # Fetch documents (limit to 100 for performance)
             documents = list(collection.find().limit(100))
-            # Use custom JSON encoder to handle ObjectId
+            # Convert to JSON
             return Response(
                 json.dumps(documents, cls=JSONEncoder),
                 mimetype='application/json'
@@ -577,48 +703,42 @@ def manage_collection(db_name, collection_name):
             
         elif request.method == 'POST':
             # Add a new document
-            document = request.json
-            if not document:
-                return jsonify({"error": "Invalid document format"}), 400
-                
-            result = collection.insert_one(document)
+            new_doc = request.json
+            result = collection.insert_one(new_doc)
             return jsonify({
                 "message": "Document added successfully",
                 "id": str(result.inserted_id)
             })
             
     except Exception as e:
-        import traceback
-        traceback.print_exc()
+        logger.error(f"Error in collection management: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
 @app.route('/database/<db_name>/<collection_name>/<doc_id>', methods=['PUT', 'DELETE'])
-def manage_document(db_name, collection_name, doc_id):
+def document_management(db_name, collection_name, doc_id):
     """
-    PUT: Update a specific document
-    DELETE: Delete a specific document
+    PUT: Update a document
+    DELETE: Delete a document
     """
     try:
-        # Get MongoDB client and collection
         mongo_client = get_mongodb_connection()
         if not mongo_client:
-            return jsonify({"error": "Error connecting to database"}), 500
+            return jsonify({"error": "Database connection error"}), 500
             
         collection = mongo_client[db_name][collection_name]
         
-        # Convert string ID to ObjectId
+        # Convert string ID to ObjectId if possible
         try:
             object_id = ObjectId(doc_id)
         except:
-            return jsonify({"error": "Invalid document ID format"}), 400
+            # If not a valid ObjectId, use the string directly
+            object_id = doc_id
         
         if request.method == 'PUT':
             # Update document
             document = request.json
-            if not document:
-                return jsonify({"error": "Invalid document format"}), 400
-                
-            # Remove _id if present to avoid modification errors
+            
+            # Remove _id if present (can't modify _id)
             if '_id' in document:
                 del document['_id']
                 
@@ -629,7 +749,7 @@ def manage_document(db_name, collection_name, doc_id):
                 
             return jsonify({
                 "message": "Document updated successfully",
-                "modified": result.modified_count
+                "modified_count": result.modified_count
             })
             
         elif request.method == 'DELETE':
@@ -644,10 +764,8 @@ def manage_document(db_name, collection_name, doc_id):
             })
             
     except Exception as e:
-        import traceback
-        traceback.print_exc()
-        return jsonify({"error": str(e), "message": str(e)}), 500
-    
+        logger.error(f"Error in document management: {str(e)}")
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
     # Register shutdown handler to close MongoDB connection when app stops
