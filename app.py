@@ -316,7 +316,6 @@ def hello_world():
    return jsonify({"text": 'Hello from Koyeb - you reached the main page!'})
 
 
-
 @app.route('/database', methods=['GET', 'POST'])
 def view_database():
     """
@@ -375,7 +374,6 @@ def view_database():
         elif request.method == 'POST' and request.form.get('action') == 'add':
             question = request.form.get('question')
             answer = request.form.get('answer')
-            question_id = request.form.get('question_id')
             
             # Get suggested questions
             suggested_questions = []
@@ -387,18 +385,24 @@ def view_database():
                 suggested_questions.append(sq)
                 i += 1
             
-            # Convert question_id to integer
-            try:
-                question_id = int(question_id)
-            except ValueError:
-                return "Question ID must be an integer", 400
+            # Get all documents to determine highest question_id
+            collection = mongo_client[db_name][collection_name]
+            all_docs = list(collection.find({}, {"question_id": 1}))
+            
+            # Find the highest question_id
+            highest_id = 0
+            for doc in all_docs:
+                if 'question_id' in doc and isinstance(doc['question_id'], int) and doc['question_id'] > highest_id:
+                    highest_id = doc['question_id']
+            
+            # Use the next available ID
+            next_id = highest_id + 1
             
             # Insert the new document
-            collection = mongo_client[db_name][collection_name]
             collection.insert_one({
                 "question": question,
                 "answer": answer,
-                "question_id": question_id,
+                "question_id": next_id,
                 "suggestedQuestions": suggested_questions
             })
             
@@ -414,7 +418,15 @@ def view_database():
         
         # Get all documents from freq_questions.questions collection
         collection = mongo_client[db_name][collection_name]
-        documents = list(collection.find({}))
+        
+        # Sort by question_id for better organization
+        documents = list(collection.find({}).sort("question_id", 1))
+        
+        # Get the highest question_id for new questions
+        highest_id = 0
+        for doc in documents:
+            if 'question_id' in doc and isinstance(doc['question_id'], int) and doc['question_id'] > highest_id:
+                highest_id = doc['question_id']
         
         # Convert ObjectId to string for display
         for doc in documents:
@@ -431,6 +443,7 @@ def view_database():
                 .container {{ max-width: 1200px; margin: 0 auto; }}
                 .card {{ border: 1px solid #ccc; border-radius: 5px; padding: 20px; margin-bottom: 20px; }}
                 .question-card {{ background-color: #f9f9f9; margin-bottom: 15px; padding: 15px; border-radius: 5px; }}
+                .question-id {{ float: right; background: #e0e0e0; padding: 5px 10px; border-radius: 3px; }}
                 .form-group {{ margin-bottom: 10px; }}
                 label {{ display: block; margin-bottom: 5px; font-weight: bold; }}
                 textarea, input[type="text"], input[type="number"] {{ width: 100%; padding: 8px; margin-bottom: 10px; }}
@@ -443,6 +456,7 @@ def view_database():
                 h2 {{ color: #333; }}
                 .nav {{ margin-bottom: 20px; }}
                 .nav a {{ padding: 8px 15px; background: #607d8b; color: white; text-decoration: none; margin-right: 5px; border-radius: 3px; }}
+                .note {{ background-color: #fffacd; padding: 10px; border-radius: 5px; margin-bottom: 15px; }}
             </style>
             <script>
                 function addSuggestedQuestion(docId) {{
@@ -481,13 +495,11 @@ def view_database():
                 
                 <div class="card">
                     <h2>Add New Question</h2>
+                    <div class="note">
+                        <strong>Note:</strong> New questions will automatically be assigned the next available ID (currently {highest_id + 1}).
+                    </div>
                     <form method="POST">
                         <input type="hidden" name="action" value="add">
-                        
-                        <div class="form-group">
-                            <label for="question_id">Question ID:</label>
-                            <input type="number" name="question_id" required>
-                        </div>
                         
                         <div class="form-group">
                             <label for="question">Question:</label>
@@ -513,20 +525,17 @@ def view_database():
                     </form>
                 </div>
                 
-                <h2>Existing Questions</h2>
+                <h2>Existing Questions ({len(documents)})</h2>
                 
                 {
                 ''.join([
                     f'''
                     <div class="question-card">
+                        <div class="question-id">ID: {doc.get('question_id', 'N/A')}</div>
                         <form method="POST">
                             <input type="hidden" name="action" value="update">
                             <input type="hidden" name="doc_id" value="{doc['_id']}">
-                            
-                            <div class="form-group">
-                                <label for="question_id">Question ID:</label>
-                                <input type="number" name="question_id" value="{doc.get('question_id', '')}" required>
-                            </div>
+                            <input type="hidden" name="question_id" value="{doc.get('question_id', '')}">
                             
                             <div class="form-group">
                                 <label for="question">Question:</label>
@@ -584,8 +593,6 @@ def view_database():
         </body>
         </html>
         """
-
-
 
 
 if __name__ == "__main__":
