@@ -578,10 +578,7 @@
                         </div>
                     </div>
                 </div>
-                
-                <button type="submit" class="btn-save">
-                    <i class="fas fa-save"></i> Save Transcript
-                </button>
+
                 <div class="card">
                     <h2><i class="fas fa-book-open"></i> Available Courses</h2>
                     <div class="available-courses">
@@ -689,7 +686,13 @@
                             </div>
                         </div>
                     </div>
+                
                 </div>
+                
+                
+                <button type="submit" class="btn-save">
+                    <i class="fas fa-save"></i> Save Transcript
+                </button>
                 
             </form>
         </div>
@@ -807,6 +810,21 @@
             // Add course button functionality
             const addCourseBtn = document.getElementById('add-course-btn');
             const coursesContainer = document.getElementById('courses-container');
+
+            if (coursesContainer) {
+                // Get all course items
+                const existingCourses = coursesContainer.querySelectorAll('.course-item');
+                
+                // Check if there's only one row and it's empty (the default row)
+                if (existingCourses.length === 1) {
+                    const courseIdInput = existingCourses[0].querySelector('input[name="course_id[]"]');
+                    
+                    // If the course ID is empty, remove this default row
+                    if (courseIdInput && !courseIdInput.value.trim()) {
+                        existingCourses[0].remove();
+                    }
+                }
+            }
             
             if (addCourseBtn && coursesContainer) {
                 // Add listeners to existing remove buttons
