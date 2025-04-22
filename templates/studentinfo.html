@@ -856,6 +856,9 @@
                         <div class="course-id">
                             <input type="text" name="course_id[]" placeholder="Course ID">
                         </div>
+                        <div class="course-name">
+                            <input type="text" name="course_name[]" placeholder="Course Name">
+                        </div>
                         <div class="course-grade">
                             <select name="grade[]">
                                 <option value="" selected>Select Grade</option>
@@ -929,10 +932,17 @@
                     const credits = [];
                     
                     courseItems.forEach(item => {
-                        const courseId = item.querySelector('input[name="course_id[]"]').value;
-                        const courseName = item.querySelector('input[name="course_name[]"]').value;
-                        const grade = item.querySelector('select[name="grade[]"]').value;
-                        const credit = item.querySelector('input[name="credits[]"]').value;
+                        const courseIdInput = item.querySelector('input[name="course_id[]"]');
+                        const courseNameInput = item.querySelector('input[name="course_name[]"]');
+                        const gradeSelect = item.querySelector('select[name="grade[]"]');
+                        const creditInput = item.querySelector('input[name="credits[]"]');
+
+
+                        const courseId = courseIdInput ? courseIdInput.value : '';
+                        const courseName = courseNameInput ? courseNameInput.value : '';
+                        const grade = gradeSelect ? gradeSelect.value : '';
+                        const credit = creditInput ? creditInput.value : '0';
+    
                         
                         courseIds.push(courseId);
                         courseNames.push(courseName);
