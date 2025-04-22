@@ -507,6 +507,9 @@
                             <div class="course-id">
                                 <input type="text" name="course_id[]" value="{{ course.course_id }}" placeholder="Course ID">
                             </div>
+                            <div class="course-name">
+                                <input type="text" name="course_name[]" value="{{ course.course_name }}" placeholder="Course Name">
+                            </div>
                             <div class="course-grade">
                                 <select name="grade[]">
                                     <option value="" {% if course.grade == "" %}selected{% endif %}>Select Grade</option>
