@@ -2,7 +2,7 @@ from llmproxy import pdf_upload
 
 def handbook_upload(user_id):
     try:
-        all_references = ["cs_handbook.pdf", "filtered_grad_courses.pdf"]
+        all_references = ["cs_handbook.pdf", "soe-grad-handbook.pdf", "filtered_grad_courses.pdf"]
         for reference in all_references:
             response = pdf_upload(
                 path = f'resources/{reference}',

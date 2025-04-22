@@ -1,0 +1,11 @@
+2025-04-22 12:00:58,913 - _internal.py:224 - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5999
+ * Running on http://192.168.1.160:5999
+2025-04-22 12:00:58,913 - _internal.py:224 - INFO - [33mPress CTRL+C to quit[0m
+2025-04-22 12:00:58,914 - _internal.py:224 - INFO -  * Restarting with stat
+2025-04-22 12:01:04,149 - _internal.py:224 - WARNING -  * Debugger is active!
+2025-04-22 12:01:04,161 - _internal.py:224 - INFO -  * Debugger PIN: 490-537-999
+2025-04-22 12:01:10,654 - _internal.py:224 - INFO - 192.168.1.160 - - [22/Apr/2025 12:01:10] "GET / HTTP/1.1" 200 -
+2025-04-22 12:01:10,712 - _internal.py:224 - INFO - 192.168.1.160 - - [22/Apr/2025 12:01:10] "[33mGET /favicon.ico HTTP/1.1[0m" 404 -
+2025-04-22 12:01:59,658 - _internal.py:224 - INFO - 192.168.1.160 - - [22/Apr/2025 12:01:59] "[35m[1mGET /student-info?id=iQPJmyQ7xNwGxWFT3 HTTP/1.1[0m" 500 -

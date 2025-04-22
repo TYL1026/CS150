@@ -1,0 +1,604 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Frequent Questions Database Manager</title>
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+    />
+    <style>
+      /* CSS Styles */
+      body {
+        font-family: Arial, sans-serif;
+        margin: 20px;
+        background-color: #f8f9fa;
+        color: #333;
+      }
+
+      .container {
+        max-width: 1000px;
+        margin: 0 auto;
+        padding: 20px;
+      }
+
+      h1,
+      h2,
+      h3 {
+        color: #2c3e50;
+      }
+
+      /* Navigation */
+      .nav {
+        margin-bottom: 20px;
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+      }
+
+      .nav a {
+        padding: 8px 15px;
+        background: #3498db;
+        color: white;
+        text-decoration: none;
+        margin-right: 10px;
+        border-radius: 4px;
+        font-weight: bold;
+        transition: background-color 0.2s;
+      }
+
+      .nav a:hover {
+        background: #2980b9;
+      }
+
+      /* Add button */
+      .add-btn {
+        padding: 10px 15px;
+        background: #2ecc71;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-weight: bold;
+        transition: background-color 0.2s;
+        font-size: 1rem;
+      }
+
+      .add-btn:hover {
+        background: #27ae60;
+      }
+
+      /* Cards and forms */
+      .card {
+        background-color: white;
+        border-radius: 8px;
+        padding: 20px;
+        margin-bottom: 20px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      }
+
+      .form-group {
+        margin-bottom: 20px;
+      }
+
+      label {
+        display: block;
+        margin-bottom: 8px;
+        font-weight: bold;
+        color: #555;
+      }
+
+      input[type="text"],
+      textarea {
+        width: 100%;
+        padding: 12px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        box-sizing: border-box;
+        font-family: inherit;
+        font-size: 1rem;
+      }
+
+      textarea {
+        height: 180px;
+        resize: vertical;
+      }
+
+      /* FAQ Items */
+      .faq-list {
+        margin-top: 20px;
+      }
+
+      .faq-item {
+        background-color: white;
+        border-radius: 8px;
+        margin-bottom: 15px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        overflow: hidden;
+      }
+
+      .faq-question {
+        cursor: pointer;
+        padding: 15px;
+        transition: background-color 0.2s;
+      }
+
+      .faq-question:hover {
+        background-color: #f5f5f5;
+      }
+
+      .question-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        position: relative;
+      }
+
+      .question-id {
+        background: #eee;
+        padding: 3px 8px;
+        border-radius: 3px;
+        font-size: 0.85rem;
+        color: #555;
+        margin-right: 10px;
+        min-width: 50px;
+        text-align: center;
+      }
+
+      .question-text {
+        flex-grow: 1;
+        font-weight: bold;
+        margin-right: 10px;
+        font-size: 1.1rem;
+      }
+
+      .question-controls {
+        display: flex;
+        gap: 5px;
+      }
+
+      .toggle-btn,
+      .edit-btn {
+        background: none;
+        border: none;
+        cursor: pointer;
+        font-size: 1.1rem;
+        padding: 5px;
+        color: #555;
+        border-radius: 4px;
+        transition: all 0.2s;
+      }
+
+      .toggle-btn:hover,
+      .edit-btn:hover {
+        background-color: #eee;
+        color: #333;
+      }
+
+      .fa-chevron-down {
+        transition: transform 0.3s ease;
+      }
+
+      .rotate-icon {
+        transform: rotate(180deg);
+      }
+
+      /* FAQ Content */
+      .faq-content {
+        padding: 0 15px 15px;
+        overflow: hidden;
+        border-top: 1px solid #eee;
+        background-color: #f9f9f9;
+      }
+
+      .answer-section,
+      .suggested-section {
+        padding: 15px 0;
+      }
+
+      .answer-text {
+        line-height: 1.6;
+        white-space: pre-wrap;
+        background: white;
+        padding: 15px;
+        border-radius: 4px;
+        border: 1px solid #eee;
+        text-indent: 0;
+      }
+
+      .suggested-list {
+        margin: 0;
+        padding-left: 20px;
+      }
+
+      .suggested-list li {
+        margin-bottom: 8px;
+      }
+
+      /* Buttons */
+      button {
+        padding: 10px 16px;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-weight: bold;
+        margin-right: 10px;
+        transition: background-color 0.2s;
+        font-size: 0.95rem;
+      }
+
+      .add-field-btn {
+        background: #3498db;
+        color: white;
+      }
+
+      .add-field-btn:hover {
+        background: #2980b9;
+      }
+
+      .save-btn {
+        background: #2ecc71;
+        color: white;
+      }
+
+      .save-btn:hover {
+        background: #27ae60;
+      }
+
+      .cancel-btn {
+        background: #95a5a6;
+        color: white;
+      }
+
+      .cancel-btn:hover {
+        background: #7f8c8d;
+      }
+
+      .delete-btn {
+        background: #e74c3c;
+        color: white;
+      }
+
+      .delete-btn:hover {
+        background: #c0392b;
+      }
+
+      .button-group {
+        margin-top: 20px;
+        display: flex;
+        gap: 10px;
+        padding: 5px 0 10px 0;
+      }
+
+      /* Note */
+      .note {
+        background-color: #fff8e1;
+        padding: 12px 15px;
+        border-radius: 4px;
+        margin-bottom: 20px;
+        border-left: 4px solid #ffc107;
+      }
+
+      /* Suggested questions */
+      .suggested-questions {
+        margin-bottom: 15px;
+      }
+
+      .suggested-question {
+        margin-bottom: 10px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>Frequent Questions Database</h1>
+
+      <div class="nav">
+        <a href="/faqs">Refresh</a>
+        <button
+          id="add-new-question-btn"
+          class="add-btn"
+          onclick="toggleAddQuestionForm()"
+        >
+          Add New Frequently Asked Questions
+        </button>
+      </div>
+
+      <!-- Add Question Form (Hidden by Default) -->
+      <div id="add-question-form" class="card" style="display: none">
+        <h2>Add New Question</h2>
+        <div class="note">
+          <strong>Note:</strong> New questions will automatically be assigned
+          the next available ID (currently {{ next_id }}).
+        </div>
+        <form method="POST">
+          <input type="hidden" name="action" value="add" />
+
+          <div class="form-group">
+            <label for="question">Question:</label>
+            <input type="text" name="question" required />
+          </div>
+
+          <div class="form-group">
+            <label for="answer">Answer:</label>
+            <textarea name="answer" required></textarea>
+          </div>
+
+          <div class="form-group">
+            <label>Suggested Questions:</label>
+            <div id="new-suggested-questions" class="suggested-questions">
+              <div class="suggested-question">
+                <input
+                  type="text"
+                  name="new_suggested_question_0"
+                  placeholder="Suggested Question"
+                />
+              </div>
+            </div>
+            <button
+              type="button"
+              class="add-field-btn"
+              onclick="addNewSuggestedQuestion()"
+            >
+              Add Suggested Question
+            </button>
+          </div>
+
+          <div class="button-group">
+            <button type="submit" class="save-btn">Save</button>
+            <button
+              type="button"
+              class="cancel-btn"
+              onclick="toggleAddQuestionForm()"
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      </div>
+
+      <h2>Existing Questions ({{ documents|length }})</h2>
+
+      <div class="faq-list">
+        {% for doc in documents %}
+        <div class="faq-item" id="faq-{{ doc['_id'] }}">
+          <div class="faq-question" onclick="toggleFAQ('{{ doc['_id'] }}')">
+            <div class="question-header">
+              <span class="question-id"
+                >ID: {{ doc.get('question_id', 'N/A') }}</span
+              >
+              <span class="question-text">{{ doc.get('question', '') }}</span>
+              <div class="question-controls">
+                <button
+                  class="toggle-btn"
+                  onclick="toggleFAQ('{{ doc['_id'] }}', event)"
+                >
+                  <i class="fas fa-chevron-down"></i>
+                </button>
+                <button
+                  class="edit-btn"
+                  onclick="toggleEditMode('{{ doc['_id'] }}', event)"
+                >
+                  <i class="fas fa-edit"></i>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div class="faq-content" style="display: none">
+            <!-- View Mode (Default) -->
+            <div class="view-mode" id="view-mode-{{ doc['_id'] }}">
+              <div class="answer-section">
+                <h3>Answer:</h3>
+                <div class="answer-text" id="answer-text-{{ doc['_id'] }}">
+                  {{- doc.get('answer', '') -}}
+                </div>
+              </div>
+
+              {% if doc.get('suggestedQuestions', []) %}
+              <div class="suggested-section">
+                <h3>Suggested Questions:</h3>
+                <ul class="suggested-list">
+                  {% for sq in doc.get('suggestedQuestions', []) %}
+                  <li>{{ sq }}</li>
+                  {% endfor %}
+                </ul>
+              </div>
+              {% endif %}
+            </div>
+
+            <!-- Edit Mode (Hidden by Default) -->
+            <div
+              class="edit-mode"
+              id="edit-mode-{{ doc['_id'] }}"
+              style="display: none"
+            >
+              <form method="POST">
+                <input type="hidden" name="action" value="update" />
+                <input type="hidden" name="doc_id" value="{{ doc['_id'] }}" />
+                <input
+                  type="hidden"
+                  name="question_id"
+                  value="{{ doc.get('question_id', '') }}"
+                />
+
+                <div class="form-group">
+                  <label for="question">Question:</label>
+                  <input
+                    type="text"
+                    name="question"
+                    value="{{ doc.get('question', '') }}"
+                    required
+                  />
+                </div>
+
+                <div class="form-group">
+                  <label for="answer">Answer:</label>
+                  <textarea name="answer" required>
+{{ doc.get('answer', '') }}</textarea
+                  >
+                </div>
+
+                <div class="form-group">
+                  <label>Suggested Questions:</label>
+                  <div
+                    id="suggested-questions-{{ doc['_id'] }}"
+                    class="suggested-questions"
+                  >
+                    {% for i, sq in enumerate(doc.get('suggestedQuestions', []))
+                    %}
+                    <div class="suggested-question">
+                      <input
+                        type="text"
+                        name="suggested_question_{{ i }}"
+                        value="{{ sq }}"
+                        placeholder="Suggested Question"
+                      />
+                    </div>
+                    {% endfor %}
+                  </div>
+                  <button
+                    type="button"
+                    class="add-field-btn"
+                    onclick="addSuggestedQuestion('{{ doc['_id'] }}')"
+                  >
+                    Add Suggested Question
+                  </button>
+                </div>
+
+                <div class="button-group">
+                  <button type="submit" class="save-btn">Save</button>
+                  <button
+                    type="button"
+                    class="cancel-btn"
+                    onclick="toggleEditMode('{{ doc['_id'] }}', event)"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    class="delete-btn"
+                    onclick="confirmDelete('{{ doc['_id'] }}', event)"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- JavaScript -->
+    <script>
+      document.addEventListener("DOMContentLoaded", function () {
+        // Initialize the page
+        initFAQs();
+      });
+
+      // Initialize FAQs
+      function initFAQs() {
+        // Any initialization code can go here
+      }
+
+      // Toggle FAQ content visibility
+      function toggleFAQ(docId, event) {
+        if (event) {
+          // Prevent event propagation if clicked on control buttons
+          event.stopPropagation();
+        }
+
+        const faqItem = document.getElementById(`faq-${docId}`);
+        const faqContent = faqItem.querySelector(".faq-content");
+        const toggleIcon = faqItem.querySelector(".fa-chevron-down");
+
+        if (
+          faqContent.style.display === "none" ||
+          faqContent.style.display === ""
+        ) {
+          faqContent.style.display = "block";
+          toggleIcon.classList.add("rotate-icon");
+        } else {
+          faqContent.style.display = "none";
+          toggleIcon.classList.remove("rotate-icon");
+        }
+      }
+
+      // Toggle between view mode and edit mode
+      function toggleEditMode(docId, event) {
+        if (event) {
+          // Prevent event propagation if clicked on control buttons
+          event.stopPropagation();
+        }
+
+        const viewMode = document.getElementById(`view-mode-${docId}`);
+        const editMode = document.getElementById(`edit-mode-${docId}`);
+        const faqContent = document
+          .getElementById(`faq-${docId}`)
+          .querySelector(".faq-content");
+
+        // Make sure content is visible when editing
+        if (faqContent.style.display === "none") {
+          toggleFAQ(docId);
+        }
+
+        if (viewMode.style.display === "none") {
+          viewMode.style.display = "block";
+          editMode.style.display = "none";
+        } else {
+          viewMode.style.display = "none";
+          editMode.style.display = "block";
+        }
+      }
+
+      // Toggle the add question form
+      function toggleAddQuestionForm() {
+        const form = document.getElementById("add-question-form");
+        const btn = document.getElementById("add-new-question-btn");
+
+        if (form.style.display === "none" || form.style.display === "") {
+          form.style.display = "block";
+          btn.textContent = "Cancel";
+        } else {
+          form.style.display = "none";
+          btn.textContent = "Add New Frequently Asked Questions";
+        }
+      }
+
+      // Add a new suggested question field
+      function addNewSuggestedQuestion() {
+        const container = document.getElementById("new-suggested-questions");
+        const count = container.children.length;
+        const newInput = document.createElement("div");
+        newInput.className = "suggested-question";
+        newInput.innerHTML = `<input type="text" name="new_suggested_question_${count}" placeholder="Suggested Question">`;
+        container.appendChild(newInput);
+      }
+
+      // Add a suggested question field to an existing question
+      function addSuggestedQuestion(docId) {
+        const container = document.getElementById(
+          `suggested-questions-${docId}`
+        );
+        const count = container.children.length;
+        const newInput = document.createElement("div");
+        newInput.className = "suggested-question";
+        newInput.innerHTML = `<input type="text" name="suggested_question_${count}" placeholder="Suggested Question">`;
+        container.appendChild(newInput);
+      }
+
+      // Confirm deletion of a question
+      function confirmDelete(docId, event) {
+        if (event) {
+          // Prevent event propagation
+          event.stopPropagation();
+        }
+
+        if (confirm("Are you sure you want to delete this question?")) {
+          document.getElementById(`delete-form-${docId}`).submit();
+        }
+      }
+    </script>
+  </body>
+</html>
