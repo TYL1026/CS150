@@ -810,22 +810,18 @@
             // Add course button functionality
             const addCourseBtn = document.getElementById('add-course-btn');
             const coursesContainer = document.getElementById('courses-container');
-
             if (coursesContainer) {
-                // Get all course items
                 const existingCourses = coursesContainer.querySelectorAll('.course-item');
                 
-                // Check if there's only one row and it's empty (the default row)
+                // If there's only one course item and it has an empty course ID, remove it
                 if (existingCourses.length === 1) {
                     const courseIdInput = existingCourses[0].querySelector('input[name="course_id[]"]');
-                    
-                    // If the course ID is empty, remove this default row
-                    if (courseIdInput && !courseIdInput.value.trim()) {
+                    if (courseIdInput && courseIdInput.value === '') {
                         existingCourses[0].remove();
                     }
                 }
             }
-            
+
             if (addCourseBtn && coursesContainer) {
                 // Add listeners to existing remove buttons
                 document.querySelectorAll('.remove-course').forEach(btn => {
